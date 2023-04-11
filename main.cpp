@@ -30,7 +30,6 @@
 
 #include "strategy_baiyu_yng_1.h"
 #include "strategy_baiyu_yng_2.h"
-#include "backup2.h"
 #include "strategy_baiyu_yng_3.h"
 #include "strategy_baiyu_yng_4.h"
 
@@ -70,15 +69,6 @@ int readMap() {
             }
         }
     }
-
-    //if (wbId == 43)
-    //    stra = new strategy_baiyu_yng1();
-    //else if (wbId == 25)
-    //    stra = new backup2();
-    //else if (wbId == 50)
-    //    stra = new strategy_baiyu_yng3();
-    //else if (wbId == 18)
-    //    stra = new strategy_baiyu_yng4();
 
     if (wbId == 43)
         stra = new strategy_baiyu_yng1();

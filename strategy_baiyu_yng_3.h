@@ -1,6 +1,7 @@
 #pragma once
 #include "strategy.h"
 #include <vector>
+#include <Windows.h>
 //#include "hwcout.h"
 
 class strategy_baiyu_yng3 :public Strategy {
@@ -29,8 +30,7 @@ class strategy_baiyu_yng3 :public Strategy {
 	int n_crash_t[4] = {0};
 	int n_crash = 1;
 
-	const int valueArr[8] = { 0,3000,3200,3400,15000,20000,20000,29000 };
-	//const int valueArr[8] = { 0,3000,3200,3400,20000,20000,20000,29000 };
+	const int valueArr[8] = { 0,3000,3200,3400,15000,15000,20000,29000 };
 
 	void initProductNeed(char* productNeed) {
 
@@ -77,6 +77,7 @@ class strategy_baiyu_yng3 :public Strategy {
 	}
 
 	void initDisV2AndWbTypeArr() {
+		//Sleep(3000);
 		wbDis.resize(wbNum);
 		wbDisSq.resize(wbNum);
 		for (auto& one : wbDis) {
@@ -142,22 +143,13 @@ class strategy_baiyu_yng3 :public Strategy {
 			return 0;
 		}
 		double value = valueArr[goodId];
-		int mstate = wbArr[wbId2].materialsState;	// bug: 对于工作台8和9，它拥有的原材料可以说一直是0，这样导致它很吃亏
+		int mstate = wbArr[wbId2].materialsState;
 		for (int i = 0; i < 8; ++i) {
 			if (mstate & 1) {		// 判断wbArr[wbid2]需不需要这个材料
 				value += valueArr[i] / 2;	// 为了补全另外加的权重，如果wbArr[wbid2]当前拥有的材料越多，它的权重就越大，如果它不缺材料，会有相应的机制处理
 			}
 			mstate = mstate >> 1;
 		}
-
-		//if (botId == 1 && wbId1 == 7 && frameId < 100)
-		//	value = 10 * value;
-
-		//if (wbId2 == 11 && goodId == 3)
-		//	value = 2 * value;
-
-		//if (wbId1 == 11 && wbId2 == 21)
-		//	value = 5 * value;
 
 		double _disBot2Wb1 = calDist(botArr[botId].x, botArr[botId].y, wbArr[wbId1].x, wbArr[wbId1].y);
 		return pow(value, 1.0) / (pow(_disBot2Wb1 + wbDis[wbId1][wbId2], 2.0));
@@ -178,6 +170,17 @@ class strategy_baiyu_yng3 :public Strategy {
 
 		double _disBot2Wb2 = calDist(botArr[botId].x, botArr[botId].y, wbArr[id2].x, wbArr[id2].y);
 		return value / _disBot2Wb2;
+	}
+
+	// botId 去wbid1 取产品goodid 送到wbId2 的 权重值
+	double getWeight3(int botId, int wbId1, int wbId2, int goodId) {
+		if (wbDis[wbId1][wbId2] == -1) {
+			return 0;
+		}
+		double value = valueArr[goodId];
+		double _disBot2Wb1 = calDist(botArr[botId].x, botArr[botId].y, wbArr[wbId1].x, wbArr[wbId1].y);
+		return pow(value, 1.0) / (pow(_disBot2Wb1 + wbDis[wbId1][wbId2], 2.0));
+
 	}
 
 	// 在当前地图中，根据getWeight()计算的权重，查找botID最适合拿来buy的工作台wbArr[id1]和最适合拿来sell的工作台wbArr[id2]
@@ -208,6 +211,11 @@ class strategy_baiyu_yng3 :public Strategy {
 
 					double dist = calDist(x, y, wbArr[id1].x, wbArr[id1].y);
 					bool checkProduct = wbArr[id1].ifHaveProduct;
+
+					//if (wbArr[id1].rpt > 0 && dist > ((wbArr[id1].rpt) * 0.02 * 6) + 0.4) {
+					//	checkProduct = true;
+					//}
+
 					if (frameId < 50 && wbArr[id1].rpt > 0 && dist > (wbArr[id1].rpt * 0.02 * 6))
 						checkProduct = true;
 
@@ -225,6 +233,52 @@ class strategy_baiyu_yng3 :public Strategy {
 			}
 		}
 
+		return 0;
+	};
+
+	// 在当前地图中，根据getWeight()计算的权重，查找botID最适合拿来进货的工作台wbArr[id1]和最适合拿来出货的工作台wbArr[id2]
+	int YNGloopId1ToId2(int tp1, int tp2, int botId, int goodId, int& wbId1, int& wbId2, double& maxWeight) {
+
+		//if (productNeed[tp1] <= 0)		// 此处无须检查tp1类型的货物是否需要，因为肯定被需要
+		//	return 0;
+
+		// 遍历8号工作台是否有需要？
+		for (int id2 : wbTypeArr[tp2]) {
+			// wbArr[id2]是否需要该tp1商品, 是否被作为卖出的目标（作为被卖出的目标的话，就不选它）
+			if (wbArr[id2].ifNeed(tp1) && !(wbIfTar[id2][0] & (1 << tp1))) {
+				for (int id1 : wbTypeArr[tp1]) {
+
+					double x = botArr[botId].x, y = botArr[botId].y;
+
+					// 如果给去7拿货, 另外判定自身是否在7附近, 采用粗略判定
+					if (tp1 == 7)
+						if (fabs(x - wbArr[id1].x) > 0.4001 || fabs(y - wbArr[id1].y) > 0.4001)
+							continue;
+
+					double dist = calDist(x, y, wbArr[id1].x, wbArr[id1].y);
+					bool checkProduct = wbArr[id1].ifHaveProduct;
+					if (frameId < 50 && wbArr[id1].rpt > 0 && dist > (wbArr[id1].rpt * 0.02 * 6))
+						checkProduct = true;
+
+					//double dist = calDist(x, y, wbArr[id1].x, wbArr[id1].y);
+					//bool checkProduct = wbArr[id1].ifHaveProduct;
+					//if (wbArr[id1].rpt > 0 && dist > ((wbArr[id1].rpt) * 0.02 * 6) + 0.4) {
+					//	checkProduct = true;
+					//}
+
+					//if (wbArr[id1].ifHaveProduct && !wbIfTar[id1][1]) {		// 是否即将拥有tp2商品, 是否被作为买入的目标
+					if (checkProduct && !wbIfTar[id1][1]) {		// 是否拥有tp2商品, 是否被作为买入的目标
+						double nowWeight = getWeight3(botId, id1, id2, goodId);
+
+						if (nowWeight > maxWeight) {
+							maxWeight = nowWeight;
+							wbId1 = id1;
+							wbId2 = id2;
+						}
+					}
+				}
+			}
+		}
 		return 0;
 	};
 
@@ -585,21 +639,6 @@ class strategy_baiyu_yng3 :public Strategy {
 					--crashNum[m];
 					--crashNum[k];
 
-					//hwcout << "frame " << frameId << hwendl;
-					//hwcout << "botidk " << k << hwendl;
-					//hwcout << "botidm " << m << hwendl;
-					//if (rotate_flag[k])
-					//	hwcout << "vk " << vk << hwendl;
-					//else
-					//	hwcout << "vk " << -vk << hwendl;
-					//if (rotate_flag[m])
-					//	hwcout << "vm " << vm << hwendl;
-					//else
-					//	hwcout << "vm " << -vm << hwendl;
-					//if (rotate_dir[k][m])
-					//	hwcout << "omega: M_PI " << hwendl;
-					//else
-					//	hwcout << "omega: -M_PI " << hwendl;
 				}
 			}
 
@@ -628,6 +667,10 @@ void strategy_baiyu_yng3::afterReadFrame(int frameId) {
 
 	initProductNeed(productNeed);
 
+	if (frameId == 257) {
+		int a = 1;
+	}
+	
 	for (int i = 0; i < 4; ++i) {
 		// 如果持有产品，那它肯定是以或者将以某个工作台为目标，这样就消耗掉1个产品需求
 		if (botArr[i].gootsId > 0 && botArr[i].gootsId < 7) // 不管上一次有没有update成功，只要持有了产品，就会消耗掉1个产品需求
@@ -637,6 +680,7 @@ void strategy_baiyu_yng3::afterReadFrame(int frameId) {
 			--productNeed[wbArr[botTarId[i][1]].wbType];
 		//// 动态更新目标
 		competeTar(i);
+		botArr[i].frame = frameId;
 	}
 
 	for (int i = 0; i < 4; ++i) {
@@ -648,6 +692,7 @@ void strategy_baiyu_yng3::afterReadFrame(int frameId) {
 					if (frameId > 9000 - f3_lastN[i])
 						continue;
 					bot.buy();
+					bot.gootsId = wbArr[botTarId[i][1]].wbType;
 
 					// 此时若生产因输出格堵塞而停止生产，那取出产品后应该进行生产。手动更改生产台的状态（rpt，materialsState，ifHaveProduct）
 					if (wbArr[botTarId[i][1]].getNeed() == 0 && wbArr[botTarId[i][1]].rpt == 0) {
@@ -765,6 +810,8 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 	int botIdid1 = botTarId[botId][1];	// botIdbuy目标id
 	int botIdid2 = botTarId[botId][2];	// botIdsell目标id
 	int goodId = wbArr[botIdid1].wbType;	// buy的货物种类
+	int buyWbType = goodId;
+	int sellWbType = wbArr[botIdid2].wbType;
 
 	if (botTarId[botId][0] == 1) {		// 如果此时机器人botId当前奔向的是buy目标
 		// 这里不需要检查productNeed，因为botId上一次更新时，已经知道了goodId被需要了
@@ -772,53 +819,100 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 		bool robFlag = false;	// 标识抢别人的目标是否抢成功，只抢别的机器人的buy端
 		double botIdLastWeight = getWeight(botId, botIdid1, botIdid2, goodId);  // 未更新目标时的权值
 		double botIdCurWeight = botIdLastWeight;
-		//int newTarId = findBestWbBuy(botId, goodId, botIdCurWeight);
-		//if (newTarId != -1 && (botIdid1 != newTarId)) {	// 看能否找到新的buy目标，且不会自己找自己
+		
+		/*
+		int newTarId = findBestWbBuy(botId, goodId, botIdCurWeight);
+		if (newTarId != -1 && (botIdid1 != newTarId)) {	// 看能否找到新的buy目标，且不会自己找自己
 
-		//	for (int i = 0; i < 4; ++i) {
-		//		if (newTarId == botTarId[i][1]) {	// 看看这个buy的目标有没有被别人锁定（只可能被一个机器人锁定，且不会是自己）
-		//			int wbId1 = -1, wbId2 = -1;
-		//			double iLastWeight = getWeight(i, botTarId[i][1], botTarId[i][2], goodId);	// 此时机器人i肯定没有到达newTarId，因为，它一旦到达，就会释放这个buy目标
-		//			double iCurWeight = iLastWeight;
+			for (int i = 0; i < 4; ++i) {
+				if (newTarId == botTarId[i][1]) {	// 看看这个buy的目标有没有被别人锁定（只可能被一个机器人锁定，且不会是自己）
+					int wbId1 = -1, wbId2 = -1;
+					double iLastWeight = getWeight(i, botTarId[i][1], botTarId[i][2], goodId);	// 此时机器人i肯定没有到达newTarId，因为，它一旦到达，就会释放这个buy目标
+					double iCurWeight = iLastWeight;
 
-		//			findNext2(i, wbId1, wbId2, iCurWeight);	// 肯定不会自己找自己的目标，因为自己已经把自己的目标锁定住了
+					findNext2(i, wbId1, wbId2, iCurWeight);	// 肯定不会自己找自己的目标，因为自己已经把自己的目标锁定住了
 
-		//			if (wbId1 != -1 && wbId2 != -1 && (botIdCurWeight - botIdLastWeight) > penalty1 * (iLastWeight - iCurWeight)) {	// 权值增益大于权值衰减
+					if (wbId1 != -1 && wbId2 != -1 && (botIdCurWeight - botIdLastWeight) > penalty1 * (iLastWeight - iCurWeight)) {	// 权值增益大于权值衰减
 
-		//				robFlag = true;
+						robFlag = true;
 
-		//				int iId1 = botTarId[i][1];	// 机器人i的buy工作台
-		//				int iId2 = botTarId[i][2];	// 机器人i的sell工作台
+						int iId1 = botTarId[i][1];	// 机器人i的buy工作台
+						int iId2 = botTarId[i][2];	// 机器人i的sell工作台
 
-		//				// 释放原来机器人botId的buy工作台的输出端，和i的buy工作台的输出端和sell工作台的输入端
-		//				wbIfTar[botIdid1][1] = 0;								// 释放工作台botIdid1的输出端
-		//				if (wbArr[iId2].wbType != 8 && wbArr[iId2].wbType != 9)
-		//					wbIfTar[iId2][0] ^= (1 << goodId);					// 释放工作台iId2的输入端
-		//				wbIfTar[iId1][1] = 0;									// 释放工作台iId1的输出端
+						// 释放原来机器人botId的buy工作台的输出端，和i的buy工作台的输出端和sell工作台的输入端
+						wbIfTar[botIdid1][1] = 0;								// 释放工作台botIdid1的输出端
+						if (wbArr[iId2].wbType != 8 && wbArr[iId2].wbType != 9)
+							wbIfTar[iId2][0] ^= (1 << goodId);					// 释放工作台iId2的输入端
+						wbIfTar[iId1][1] = 0;									// 释放工作台iId1的输出端
 
-		//				// 更新机器人的目标工作台
-		//				botTarId[botId] = { 1,newTarId,botIdid2 };
-		//				botTarId[i] = { 1,wbId1,wbId2 };
+						// 更新机器人的目标工作台
+						botTarId[botId] = { 1,newTarId,botIdid2 };
+						botTarId[i] = { 1,wbId1,wbId2 };
 
-		//				// 锁定新的机器人botId的buy工作台的输出端，和i的buy工作台的输出端和sell工作台的输入端
-		//				wbIfTar[newTarId][1] = 1;								// 锁定工作台newTarId的输出端
-		//				if (wbArr[wbId2].wbType != 8 && wbArr[wbId2].wbType != 9)
-		//					wbIfTar[wbId2][0] = (wbIfTar[wbId2][0] | (1 << wbArr[wbId1].wbType));	// 锁定工作台wbId2的输入端
-		//				wbIfTar[wbId1][1] = 1;									// 锁定工作台wbId1的输出端
+						// 锁定新的机器人botId的buy工作台的输出端，和i的buy工作台的输出端和sell工作台的输入端
+						wbIfTar[newTarId][1] = 1;								// 锁定工作台newTarId的输出端
+						if (wbArr[wbId2].wbType != 8 && wbArr[wbId2].wbType != 9)
+							wbIfTar[wbId2][0] = (wbIfTar[wbId2][0] | (1 << wbArr[wbId1].wbType));	// 锁定工作台wbId2的输入端
+						wbIfTar[wbId1][1] = 1;									// 锁定工作台wbId1的输出端
 
-		//				// 更新机器人移动的目标
-		//				botArr[botId].setMoveTarget(wbArr[botTarId[botId][1]]);
-		//				botArr[botId].moveUntillArriveTarget_YNG3();
-		//				botArr[i].setMoveTarget(wbArr[botTarId[i][1]]);
-		//				botArr[i].moveUntillArriveTarget_YNG3();
-		//			}
-		//			break;
+						// 更新机器人移动的目标
+						botArr[botId].setMoveTarget(wbArr[botTarId[botId][1]]);
+						botArr[botId].moveUntillArriveTarget_YNG3();
+						botArr[i].setMoveTarget(wbArr[botTarId[i][1]]);
+						botArr[i].moveUntillArriveTarget_YNG3();
+					}
+					break;
 
-		//		}
-		//	}
+				}
+			}
 
-		//}
+		}
+		*/
 
+		// 本人认为的理想的对购入目标的动态更新
+		/*
+		if (robFlag == false) {		// 如果抢别人的目标不成功，则试图找没有机器人锁定的buy工作台，且更新后能小赚
+
+			double x = botArr[botId].x, y = botArr[botId].y;
+			double minDist = 1000.0;
+			int wbId1 = -1, wbId2 = -1;
+			double curWeight = penalty2 * botIdLastWeight;
+
+			YNGloopId1ToId2(buyWbType, sellWbType, botId, goodId, wbId1, wbId2, curWeight);
+
+			if (wbId1 != -1 && wbId2 != -2) {
+
+				double bot_vx = bot.lineSpeed[0], bot_vy = bot.lineSpeed[1];
+				double wb_x = wbArr[wbId1].x, wb_y = wbArr[wbId1].y;
+				double bot_x = bot.x, bot_y = bot.y;
+				double deltax = wb_x - bot_x, deltay = wb_y - bot_y;
+
+				if (bot_vx * deltax + bot_vy * deltay < 0)	// 如果新目标在机器人速度方向的背后，则不选它
+					return;
+
+				// 释放原来的工作台的输出端
+				wbIfTar[botIdid1][1] = 0;
+				// 锁定新目标工作台的输出端
+				wbIfTar[wbId1][1] = 1;
+
+				// 释放原来的工作台的输入端
+				if (wbArr[botIdid2].wbType != 8 && wbArr[botIdid2].wbType != 9)
+					wbIfTar[botIdid2][0] ^= (1 << goodId);					// 释放工作台botIdid2的输入端
+				// 锁定新目标工作台的输出端
+				if (wbArr[wbId2].wbType != 8 && wbArr[wbId2].wbType != 9)
+					wbIfTar[wbId2][0] = (wbIfTar[wbId2][0] | (1 << goodId));	// 锁定工作台wbId2的输入端
+
+				// 更新机器人的目标工作台
+				botTarId[botId] = { 1,wbId1,wbId2 };
+
+				// 更新机器人移动的目标
+				botArr[botId].setMoveTarget(wbArr[botTarId[botId][1]]);
+				botArr[botId].moveUntillArriveTarget_YNG3();
+			}
+		}
+		*/
+
+		// 本人认为的不完美的对购入目标的动态更新
 		if (robFlag == false) {		// 如果抢别人的目标不成功，则试图找没有机器人锁定的buy工作台，且更新后能小赚
 
 			double x = botArr[botId].x, y = botArr[botId].y;
@@ -834,6 +928,7 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 					}
 				}
 			}
+
 			if (tarId != -1) {
 
 				double botIdCurWeight = getWeight(botId, tarId, botIdid2, goodId);
@@ -851,15 +946,6 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 				// 更新机器人移动的目标
 				botArr[botId].setMoveTarget(wbArr[botTarId[botId][1]]);
 				botArr[botId].moveUntillArriveTarget_YNG3();
-
-				//hwcout << "frame " << frameId << hwendl;
-				//hwcout << "botId " << botId << hwendl;
-				//hwcout << "oldBuyTar " << botIdid1 << hwendl;
-				//hwcout << "newBuyTar " << tarId << hwendl;
-				//hwcout << "oldSellTar " << botIdid2 << hwendl;
-				//hwcout << "newSellTar " << botIdid2 << hwendl;
-				//hwcout << "botIdLastWeight " << botIdLastWeight << hwendl;
-				//hwcout << "botIdCurWeight " << botIdCurWeight << hwendl;
 
 			}
 		}
@@ -884,19 +970,9 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 			}
 
 			if (deltaAngle > M_PI_2) {	// 说明这时候新目标在机器人朝向的背后，则增大它的惩罚因子
-				if (botIdCurWeight <= 1.8 * botIdLastWeight) {
-					//hwcout << "frame " << frameId << hwendl;
-					//hwcout << "1 " << hwendl;
-					//hwcout << "botId " << botId << hwendl;
-					//hwcout << "goodId " << goodId << hwendl;
-					//hwcout << "oldSellTar " << botIdid2 << hwendl;
-					//hwcout << "newSellTar " << tarId << hwendl;
-					//hwcout << "botIdLastWeight " << botIdLastWeight << hwendl;
-					//hwcout << "botIdCurWeight " << botIdCurWeight << hwendl;
-					//hwcout << "deltaAngle " << deltaAngle << hwendl;
+				if (botIdCurWeight <= f3_penalty3_1 * botIdLastWeight) {
 					return;
-				}
-					
+				}	
 			}
 
 			if (botIdCurWeight <= penalty3 * botIdLastWeight)
@@ -911,15 +987,6 @@ void strategy_baiyu_yng3::competeTar(int botId) {
 			// 更新机器人移动的目标
 			botArr[botId].setMoveTarget(wbArr[tarId]);
 			botArr[botId].moveUntillArriveTarget_YNG3();
-
-			//hwcout << "frame " << frameId << hwendl;
-			//hwendl << "2 " << hwendl;
-			//hwcout << "botId " << botId << hwendl;
-			//hwcout << "goodId " << goodId << hwendl;
-			//hwcout << "oldSellTar " << botIdid2 << hwendl;
-			//hwcout << "newSellTar " << tarId << hwendl;
-			//hwcout << "botIdLastWeight " << botIdLastWeight << hwendl;
-			//hwcout << "botIdCurWeight " << botIdCurWeight << hwendl;
 		}
 	}
 

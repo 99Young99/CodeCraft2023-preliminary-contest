@@ -3,7 +3,7 @@
 #include <iostream>
 #include "workbench.h"
 #include "parameter.h"
-//#include "hwcout.h"
+#include "hwcout.h"
 
 // 引入M_PI等常数
 #define _USE_MATH_DEFINES
@@ -135,8 +135,6 @@ public:
 			tvr >> cvr >> angleSpeed >>
 			lineSpeed[0] >> lineSpeed[1] >>
 			faceTo >> x >> y;
-
-		/*hwcout << "now in bot" << hwendl;*/
 	}
 
 	void updateAfterHandle() {
@@ -150,6 +148,7 @@ public:
 	double tarX = 0;
 	double tarY = 0;
 	int state = HW_NO_TARGET;
+	int frame;
 
 	/// <summary>
 	/// 目标工作台的id
@@ -200,7 +199,7 @@ public:
 		// 与朝向相切, 且目标点在其上 的 圆弧 的 弧度;
 		double rad = getAngleBetweenThisBotAndWorkbench(tarX, tarY);
 
-		const double offset = 0.3;
+		const double offset = 0.0;
 
 		// 旋转死区外
 		// todo: 当帧率跑不满时,优化重复计算
@@ -216,8 +215,6 @@ public:
 			}*/
 			return 6;
 		}
-
-
 
 		// 目标在朝向两侧分别讨论
 		double offset_x, offset_y;
@@ -236,14 +233,10 @@ public:
 
 
 		//double minSpeed = dis / 2 / abs(sin(rad2)) * M_PI;
-		double minSpeed = dis / 2 / abs(sin(rad2));
+		double minSpeed = dis / 2 / abs(sin(rad2)) * 2.0;
 		if (outNum != 1) {
 			outNum = 2;
-			//hwcout << "计算最小速度:" << minSpeed << hwendl;
-			/*hwcout << "坐标" << this->x << ':' << this->y << " \nfaceto:" << this->faceTo
-				<< "\noffset:" << offset_x << ':' << offset_y << hwendl;*/
 		}
-		//hwcout << "ping:" << pow(this->x - tarX, 2) + pow(this->y - tarY, 2) << "dis" << dis << " rad" << rad << " minSpd" << minSpeed << hwendl;
 		return minSpeed;
 	}
 
@@ -253,7 +246,7 @@ public:
 
 		static int outNum = -1;
 
-		// 与朝向相切, 且目标点在其上的圆弧的弧度;
+		// 朝向与机器人和目标点之间的连线的夹角
 		double rad = getAngleBetweenThisBotAndWorkbench(tarX, tarY);
 
 		const double offset = f1_offset;
@@ -282,7 +275,7 @@ public:
 
 		dis = sqrt(pow(this->x + offset_x - tarX, 2) + pow(this->y + offset_y - tarY, 2));
 
-		double rad2 = getAngleBetween2PointAndWorkbench(this->x + offset_x, this->y + offset_y, tarX, tarY);
+		double rad2 = (this->x + offset_x, this->y + offset_y, tarX, tarY);
 
 		double minSpeed = dis / 2 / abs(sin(rad2)) * f1_getMaxSpeed;
 		if (outNum != 1) {
@@ -335,54 +328,74 @@ public:
 		return minSpeed;
 	}
 
-	double getMaxSpeed3() {
+	double getMaxSpeed3(double omega) {
 
-		double dis = sqrt(pow(this->x - tarX, 2) + pow(this->y - tarY, 2));
+		double vx = lineSpeed[0], vy = lineSpeed[1];
+		double angleV = atan2(vy, vx);
+		double deltaX = tarX - this->x, deltaY = tarY - this->y;
+		double angleTar2Bot = atan2(deltaY, deltaX);
+		double theta1 = angleTar2Bot - angleV;
+		theta1 = theta1 > M_PI ? theta1 - 2 * M_PI : (theta1 <= -M_PI ? theta1 + 2 * M_PI : theta1);	// 将theta1保持在[-pi,pi]
+		double theta3 = fabs(angleTar2Bot) > M_PI_2 ? (M_PI - fabs(angleTar2Bot)) : fabs(angleTar2Bot);	// 强行取锐角
+		double theta2 = M_PI_2 - theta3;
 
-		static int outNum = -1;
+		double offset = 0.4;
 
-		// 与朝向相切, 且目标点在其上 的 圆弧 的 弧度;
-		double rad = getAngleBetweenThisBotAndWorkbench(tarX, tarY);
+		if (gootsId)		// 持有产品后，对机器人对速度控制保守一些
+			offset = 0.86 * 0.4;
 
-		const double offset = f3_offset;
+		// offset原始值为0.4，对应于机器人在工作台的感知范围内，
+		// 但当机器人携带货物时，offset会稍作降低，让机器人更偏
+		// 向进入速度控制
+		double offset_x, offset_y;	// 点C的位置计算
+		double offset1_x, offset1_y, offset2_x, offset2_y;
 
-		// 旋转死区外
-		// todo: 当帧率跑不满时,优化重复计算
-		if (dis > M_2_PI * 6 + offset) {
-			return 6;
+		if (deltaY * deltaX < 0) {	// 线段AB与x轴的夹角成钝角
+			offset1_x = tarX + offset * cos(fabs(theta2));
+			offset1_y = tarY + offset * sin(fabs(theta2));
+			offset2_x = tarX - offset * cos(fabs(theta2));
+			offset2_y = tarY - offset * sin(fabs(theta2));
 		}
-
-		// 前方矩形区域, 无需减速
-		if (dis * abs(sin(rad)) < offset) {
-			/*if (outNum != 0) {
-				outNum = 0;
-				hwcout << "行进方向前方矩形区域, 无需减速" << hwendl;
-			}*/
-			return 6;
+		else {				// 线段AB与x轴的夹角成锐角
+			offset1_x = tarX - offset * cos(fabs(theta2));
+			offset1_y = tarY + offset * sin(fabs(theta2));
+			offset2_x = tarX + offset * cos(fabs(theta2));
+			offset2_y = tarY - offset * sin(fabs(theta2));
 		}
-
-
-
-		// 目标在朝向两侧分别讨论
-		double offset_x, offset_y;
-		if (rad > 0) {
-			offset_x = offset * cos(this->faceTo + M_PI_2);
-			offset_y = offset * sin(this->faceTo + M_PI_2);
+		double angleOffset12Bot = atan2(offset1_y - this->y, offset1_x - this->x);
+		double angleOffset22Bot = atan2(offset2_y - this->y, offset2_x - this->x);
+		double angleGap1 = fabs(angleOffset12Bot - angleV);
+		if (angleGap1 > M_PI) {
+			angleGap1 = 2 * M_PI - angleGap1;
+		}
+		double angleGap2 = fabs(angleOffset22Bot - angleV);
+		if (angleGap2 > M_PI) {
+			angleGap2 = 2 * M_PI - angleGap2;
+		}
+		if (angleGap2 > angleGap1) {
+			offset_x = offset1_x;
+			offset_y = offset1_y;
 		}
 		else {
-			offset_x = offset * cos(this->faceTo - M_PI_2);
-			offset_y = offset * sin(this->faceTo - M_PI_2);
+			offset_x = offset2_x;
+			offset_y = offset2_y;
 		}
 
-		dis = sqrt(pow(this->x + offset_x - tarX, 2) + pow(this->y + offset_y - tarY, 2));
+		double angleOffset2Bot = atan2(offset_y - this->y, offset_x - this->x);
+		double theta4 = angleOffset2Bot - angleV;
+		theta4 = theta4 > M_PI ? 2 * M_PI - theta4 : (theta4 <= -M_PI ? theta4 + 2 * M_PI : theta4);
+		double dist1 = sqrt(pow(this->x - offset_x, 2) + pow(this->y - offset_y, 2));
+		double R = dist1 / (2 * fabs(sin(theta4)));
 
-		double rad2 = getAngleBetween2PointAndWorkbench(this->x + offset_x, this->y + offset_y, tarX, tarY);
-
-
-		double minSpeed = dis / 2 / abs(sin(rad2)) * f3_getMaxSpeed;
-		if (outNum != 1) {
-			outNum = 2;
+		if ((6.0 / R) < M_PI) {		// 旋转死区之外，无须减速
+			return 6;
 		}
+
+		// 如果速度方向在angleOKZone之外，按照圆弧轨迹，计算出相应的速度
+		double dist2 = sqrt(pow(this->x - tarX, 2) + pow(this->y - tarY, 2));
+		double r = dist2 / 2 / fabs(sin(theta1));
+		double minSpeed =  r * fabs(omega);
+
 		return minSpeed;
 	}
 
@@ -411,8 +424,6 @@ public:
 			}*/
 			return 6;
 		}
-
-
 
 		// 目标在朝向两侧分别讨论
 		double offset_x, offset_y;
@@ -510,31 +521,12 @@ public:
 		}
 
 		this->rotate(omega);
-
 	}
 
 	/// <summary>
 /// </summary>
 	void move_yng3() {
 		double dAngle = getAngleBetweenThisBotAndWorkbench(tarX, tarY);
-
-		// 这里不一定是正面提升, minSpeed选 -2 或 0也是不同方案, 具体可以多试几次, 获取较好结果
-		double minSpeed;
-		if (abs(dAngle) > M_PI_2) {
-			minSpeed = -2;
-		}
-		else {
-			minSpeed = getMaxSpeed3();
-		}
-
-		//double minSpeed = getMaxSpeed4();
-
-		if (minSpeed < 6) {
-			this->forward(minSpeed);
-		}
-		else {
-			this->forward(6);
-		}
 
 		// 过量调节角度, 避免当 角度差 < 一帧能调节的最高角度 时, 产生的误差问题(具体表现为靠近目标点时需要
 		double ratio = 1.0;
@@ -553,6 +545,37 @@ public:
 		}
 
 		this->rotate(omega);
+
+		// 这里不一定是正面提升, minSpeed选 -2 或 0也是不同方案, 具体可以多试几次, 获取较好结果
+		double minSpeed;
+		if (abs(dAngle) > M_PI_2) {
+			minSpeed = -2;
+		}
+		else {
+			minSpeed = getMaxSpeed3(omega);
+		}
+
+		if (minSpeed < 6) {
+			this->forward(minSpeed);
+			//if (botId == 3 && frame > 8500) {
+			//	hwcout << "frame " << frame << hwendl;
+			//	hwcout << "speed  " << minSpeed << hwendl;
+			//}
+				
+		}
+		else {
+			this->forward(6);
+			//if (botId == 3 && frame > 8500) {
+			//	hwcout << "frame " << frame << hwendl;
+			//	hwcout << "speed  " << 6 << hwendl;
+			//}
+				
+		}
+		//if (botId == 3 && frame > 8500) {
+		//	hwcout << "omega  " << omega << hwendl;
+		//}
+			
+
 	}
 
 	void move_yng4() {
@@ -656,7 +679,7 @@ public:
 		}
 
 		// 过量调节角度, 避免当 角度差 < 一帧能调节的最高角度 时, 产生的误差问题(具体表现为靠近目标点时需要
-		double ratio = 1.5;
+		double ratio = 1.0;
 		double omega;
 		if (dAngle < 0) {
 			dAngle = dAngle * ratio < -M_PI ? -M_PI : dAngle * ratio;
@@ -944,8 +967,6 @@ public:
 
 		return HW_ON_THE_WAY;
 	}
-
-
 
 
 	//// 以下为白钰的测试策略算法, 可以自行调整
